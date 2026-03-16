@@ -9,6 +9,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.common.action_chains import ActionChains
 from datetime import datetime
 import calendar
 import sys
@@ -52,13 +53,11 @@ def configurar_driver():
     options.add_argument("--window-size=1920,1080")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
     
+    # Estratégia 'none' para o Selenium não ficar preso esperando o renderer
     options.page_load_strategy = 'none' 
     driver = webdriver.Chrome(options=options)
     
-    # AJUSTE PARA O ERRO DE SCRIPT TIMEOUT
-    driver.set_script_timeout(120) 
-    driver.set_page_load_timeout(180) 
-    
+    driver.set_page_load_timeout(180)
     return driver
 
 def aguardar_download(timeout=180): 
@@ -115,7 +114,8 @@ def realizar_ronda(driver, wait):
         try:
             print(f"Processando {aba}...")
             driver.get(f"https://sesce.clif.rvimola.com.br/{path}")
-            time.sleep(15)
+            time.sleep(20) # Tempo para estabilizar página pesada
+            
             Select(wait.until(EC.element_to_be_clickable((By.ID, "filtro_unidade")))).select_by_value("1")
             
             if "concluidas" in path:
@@ -144,34 +144,39 @@ if __name__ == "__main__":
         driver = configurar_driver()
         wait = WebDriverWait(driver, 60)
         
-        print("Acessando tela de login diretamente...")
+        print("Acessando tela de login...")
         driver.get("https://sesce.clif.rvimola.com.br/usuarios/login")
-        time.sleep(30)
         
-        # INJEÇÃO ROBUSTA COM TIMEOUT PARA O SELENIUM NÃO TRAVAR
-        print("Injetando credenciais via JS...")
-        driver.execute_script(f"""
-            var user = '{USUARIO}';
-            var pass = '{SENHA}';
-            var checkExist = setInterval(function() {{
-               if (document.getElementById('UsuarioLogin')) {{
-                  document.getElementById('UsuarioLogin').value = user;
-                  document.getElementById('UsuarioSenha').value = pass;
-                  document.getElementById('UsuarioLoginForm').submit();
-                  clearInterval(checkExist);
-               }}
-            }}, 500);
-        """)
+        # Espera bruta de 40 segundos para o site carregar tudo sem pressa
+        print("Aguardando carregamento inicial (40s)...")
+        time.sleep(40)
         
-        print("Login submetido. Aguardando Dashboard (40s)...")
+        print("Simulando digitação humana via ActionChains...")
+        try:
+            # Em vez de injetar código, vamos "clicar" e "digitar" teclas
+            # Isso mata o erro de 'script timeout'
+            user_input = wait.until(EC.presence_of_element_located((By.ID, "UsuarioLogin")))
+            
+            actions = ActionChains(driver)
+            actions.move_to_element(user_input).click().send_keys(USUARIO).perform()
+            time.sleep(2)
+            
+            actions.send_keys(Keys.TAB).send_keys(SENHA).perform()
+            time.sleep(2)
+            
+            actions.send_keys(Keys.ENTER).perform()
+            print("Teclas de login enviadas com sucesso.")
+            
+        except Exception as e_action:
+            print(f"Erro na ação de teclado: {e_action}. Tentando alternativa...")
+            # Alternativa via seletor direto caso o ActionChains falhe
+            driver.find_element(By.ID, "UsuarioLogin").send_keys(USUARIO)
+            driver.find_element(By.ID, "UsuarioSenha").send_keys(SENHA)
+            driver.find_element(By.ID, "UsuarioSenha").send_keys(Keys.ENTER)
+
+        print("Aguardando Dashboard (40s)...")
         time.sleep(40) 
         
-        # Se ainda estiver na tela de login por algum motivo, tenta um clique bruto
-        if "login" in driver.current_url.lower():
-            print("Tentando clique manual no botão de login...")
-            driver.execute_script("document.querySelector('input[type=\"submit\"]').click();")
-            time.sleep(20)
-
         realizar_ronda(driver, wait)
         
     except Exception as e:
