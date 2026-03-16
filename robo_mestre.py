@@ -13,7 +13,7 @@ from datetime import datetime
 import calendar
 import sys
 
-# Ajuste de encoding para os logs do GitHub
+# Ajuste de encoding
 if sys.stdout.encoding != 'utf-8':
     sys.stdout.reconfigure(encoding='utf-8')
 
@@ -49,16 +49,10 @@ def configurar_driver():
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--remote-debugging-pipe")
-    
-    # FORÇAR TAMANHO DE MONITOR DESKTOP (Evita layout mobile)
     options.add_argument("--window-size=1920,1080")
-    
-    # DISFARCE: Faz o site pensar que é um Windows Real
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
     
-    # Estratégia de carregamento 'none' para não travar o renderer
     options.page_load_strategy = 'none' 
-    
     driver = webdriver.Chrome(options=options)
     driver.set_page_load_timeout(180) 
     return driver
@@ -78,7 +72,7 @@ def aguardar_download(timeout=180):
 
 def enviar_para_google(caminho_excel, nome_aba):
     try:
-        print(f"Enviando dados para aba: {nome_aba}")
+        print(f"Enviando dados para: {nome_aba}")
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = ServiceAccountCredentials.from_json_keyfile_name(CHAVE_JSON, scope)
         client = gspread.authorize(creds)
@@ -97,7 +91,7 @@ def enviar_para_google(caminho_excel, nome_aba):
         sheet.clear()
         sheet.update(dados)
         sheet.update_acell('Z1', f"Atualizado: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
-        print(f"--- SUCESSO: {nome_aba} ATUALIZADA ---")
+        print(f"--- SUCESSO: {nome_aba} ---")
         os.remove(caminho_excel) 
     except Exception as e:
         print(f"Erro Google Sheets: {e}")
@@ -111,21 +105,17 @@ def realizar_ronda(driver, wait):
         ("Relsaidasgerals/filtrosaidas", "PEDIDOS EM ABERTO", "RelsaidasgeralTipofiltro"),
         ("Relsaidasconcluidas/listarprodutos", "SAÍDAS CONCLUÍDAS", "RelsaidasconcluidaTipofiltro")
     ]
-
     d_ini, d_fim = obter_datas_mes_atual()
 
     for path, aba, tipo_filtro_id in rotinas:
-        print(f"Acessando: {aba}...")
-        driver.get(f"https://sesce.clif.rvimola.com.br/{path}")
-        time.sleep(15)
-        
         try:
+            print(f"Processando {aba}...")
+            driver.get(f"https://sesce.clif.rvimola.com.br/{path}")
+            time.sleep(15)
             Select(wait.until(EC.element_to_be_clickable((By.ID, "filtro_unidade")))).select_by_value("1")
-            time.sleep(3)
             
             if "concluidas" in path:
                 driver.execute_script(f"document.getElementById('data_inicio').value='{d_ini}'; document.getElementById('data_final').value='{d_fim}';")
-            
             if "saidasgerals" in path:
                 driver.execute_script("document.getElementById('cod_wms').value='1'; document.getElementById('filtro_nstatus_ped').value='0';")
                 time.sleep(5)
@@ -133,11 +123,10 @@ def realizar_ronda(driver, wait):
             driver.execute_script(f"document.getElementById('{tipo_filtro_id}').value = '1'; EscolhaTipoRelatorio();")
             wait.until(EC.element_to_be_clickable((By.ID, "XLSX"))).click()
             
-            timeout_dl = 200 if "saidasgerals" in path else 120
-            if aguardar_download(timeout_dl):
+            if aguardar_download(200 if "saidasgerals" in path else 120):
                 enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), aba)
         except Exception as e:
-            print(f"Erro na rotina {aba}: {e}")
+            print(f"Erro em {aba}: {e}")
 
 if __name__ == "__main__":
     for f in os.listdir(DOWNLOAD_PATH): 
@@ -149,49 +138,35 @@ if __name__ == "__main__":
     driver = None
     try:
         driver = configurar_driver()
-        print("Chrome aberto. Aguardando estabilização...")
-        time.sleep(10)
-        
         wait = WebDriverWait(driver, 60)
         
-        print(f"Acessando sistema: {URL_SISTEMA}")
-        driver.get(URL_SISTEMA)
-        time.sleep(25)
+        # ACESSO DIRETO À TELA DE LOGIN (Economiza um passo)
+        print("Acessando tela de login diretamente...")
+        driver.get("https://sesce.clif.rvimola.com.br/usuarios/login")
+        time.sleep(30)
         
-        # CLIQUE NO BOTÃO "ENTRAR" VIA JAVASCRIPT (Baseado no seu código fonte)
-        print("Buscando botão inicial 'Entrar'...")
-        try:
-            driver.execute_script("""
-                let btn = Array.from(document.querySelectorAll('a, button')).find(el => el.textContent.trim() === 'Entrar');
-                if(btn) btn.click();
-            """)
-            print("Comando de clique enviado. Aguardando tela de login (20s)...")
+        # LOGIN POR INJEÇÃO DE SCRIPT (Não falha se o campo estiver "escondido")
+        print("Injetando credenciais via JS...")
+        driver.execute_script(f"""
+            document.getElementById('UsuarioLogin').value = '{USUARIO}';
+            document.getElementById('UsuarioSenha').value = '{SENHA}';
+            document.getElementById('UsuarioLoginForm').submit();
+        """)
+        
+        print("Login submetido. Aguardando Dashboard (30s)...")
+        time.sleep(30) 
+        
+        # Verifica se logou (se a URL mudou ou se não estamos mais no login)
+        if "login" in driver.current_url.lower():
+            print("Aviso: Ainda na tela de login. Tentando clique manual no botão...")
+            driver.execute_script("document.querySelector('input[type=\"submit\"]').click();")
             time.sleep(20)
-        except:
-            print("Botão não interagido, tentando seguir...")
 
-        print("Preenchendo credenciais...")
-        # Seletores flexíveis para IDs ou Names
-        try:
-            u_field = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[name*='login'], #UsuarioLogin")))
-            u_field.send_keys(USUARIO)
-            
-            p_field = driver.find_element(By.CSS_SELECTOR, "input[name*='senha'], #UsuarioSenha")
-            p_field.send_keys(SENHA)
-            p_field.send_keys(Keys.ENTER)
-            print("Login submetido.")
-        except Exception as e:
-            print(f"Erro ao localizar campos de login: {e}")
-            raise e
-        
-        time.sleep(25) 
         realizar_ronda(driver, wait)
         
     except Exception as e:
         print(f"!!! ERRO FATAL !!!: {e}")
     finally:
-        if driver:
-            driver.quit()
-        if os.path.exists(CHAVE_JSON): 
-            os.remove(CHAVE_JSON)
+        if driver: driver.quit()
+        if os.path.exists(CHAVE_JSON): os.remove(CHAVE_JSON)
         print(f"--- FIM DO PROCESSO: {datetime.now()} ---")
