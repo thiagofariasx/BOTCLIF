@@ -13,7 +13,7 @@ from datetime import datetime
 import calendar
 import sys
 
-# Ajuste de encoding
+# Ajuste de encoding para os logs do GitHub
 if sys.stdout.encoding != 'utf-8':
     sys.stdout.reconfigure(encoding='utf-8')
 
@@ -49,15 +49,16 @@ def configurar_driver():
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--remote-debugging-pipe")
+    
+    # FORÇAR TAMANHO DE MONITOR DESKTOP (Evita layout mobile)
     options.add_argument("--window-size=1920,1080")
     
-    # Flags de estabilidade
-    options.add_argument("--disable-renderer-backgrounding")
-    options.add_argument("--disable-backgrounding-occluded-windows")
-    options.add_argument("--disable-ipc-flooding-protection")
+    # DISFARCE: Faz o site pensar que é um Windows Real
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
     
-    # Usaremos 'none' para evitar travas de renderer no GitHub
+    # Estratégia de carregamento 'none' para não travar o renderer
     options.page_load_strategy = 'none' 
+    
     driver = webdriver.Chrome(options=options)
     driver.set_page_load_timeout(180) 
     return driver
@@ -103,62 +104,40 @@ def enviar_para_google(caminho_excel, nome_aba):
 
 def realizar_ronda(driver, wait):
     print("Iniciando rotinas de download...")
-    
-    # [1] Pendentes
-    print("Processando Pendentes...")
-    driver.get("https://sesce.clif.rvimola.com.br/Relentradaspendentes/filtroentradas")
-    time.sleep(15)
-    Select(wait.until(EC.element_to_be_clickable((By.ID, "filtro_unidade")))).select_by_value("1")
-    time.sleep(3)
-    driver.execute_script("document.getElementById('RelentradaspendenteTipofiltro').value = '1'; EscolhaTipoRelatorio();")
-    wait.until(EC.element_to_be_clickable((By.ID, "XLSX"))).click()
-    if aguardar_download(): 
-        enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), "ENTRADAS PENDENTES")
+    rotinas = [
+        ("Relentradaspendentes/filtroentradas", "ENTRADAS PENDENTES", "RelentradaspendenteTipofiltro"),
+        ("Relentradasconcluidasdetalhados/filtroentradas", "ENTRADAS CONCLUÍDAS", "RelentradasconcluidasdetalhadoTipofiltro"),
+        ("Relprodutosbloqueados/listarprodutos", "BLOQUEADOS", "RelprodutosbloqueadoTipofiltro"),
+        ("Relsaidasgerals/filtrosaidas", "PEDIDOS EM ABERTO", "RelsaidasgeralTipofiltro"),
+        ("Relsaidasconcluidas/listarprodutos", "SAÍDAS CONCLUÍDAS", "RelsaidasconcluidaTipofiltro")
+    ]
 
-    # [2] Concluídas
-    print("Processando Concluídas...")
     d_ini, d_fim = obter_datas_mes_atual()
-    driver.get("https://sesce.clif.rvimola.com.br/Relentradasconcluidasdetalhados/filtroentradas")
-    time.sleep(15)
-    Select(wait.until(EC.element_to_be_clickable((By.ID, "filtro_unidade")))).select_by_value("1")
-    time.sleep(3)
-    driver.execute_script(f"document.getElementById('data_inicio').value='{d_ini}'; document.getElementById('data_final').value='{d_fim}'; document.getElementById('RelentradasconcluidasdetalhadoTipofiltro').value='1'; EscolhaTipoRelatorio();")
-    wait.until(EC.element_to_be_clickable((By.ID, "XLSX"))).click()
-    if aguardar_download(): 
-        enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), "ENTRADAS CONCLUÍDAS")
 
-    # [3] Bloqueados
-    print("Processando Bloqueados...")
-    driver.get("https://sesce.clif.rvimola.com.br/Relprodutosbloqueados/listarprodutos")
-    time.sleep(15)
-    Select(wait.until(EC.element_to_be_clickable((By.ID, "filtro_unidade")))).select_by_value("1")
-    time.sleep(3)
-    driver.execute_script("document.getElementById('RelprodutosbloqueadoTipofiltro').value='1'; EscolhaTipoRelatorio();")
-    wait.until(EC.element_to_be_clickable((By.ID, "XLSX"))).click()
-    if aguardar_download(): 
-        enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), "BLOQUEADOS")
+    for path, aba, tipo_filtro_id in rotinas:
+        print(f"Acessando: {aba}...")
+        driver.get(f"https://sesce.clif.rvimola.com.br/{path}")
+        time.sleep(15)
+        
+        try:
+            Select(wait.until(EC.element_to_be_clickable((By.ID, "filtro_unidade")))).select_by_value("1")
+            time.sleep(3)
+            
+            if "concluidas" in path:
+                driver.execute_script(f"document.getElementById('data_inicio').value='{d_ini}'; document.getElementById('data_final').value='{d_fim}';")
+            
+            if "saidasgerals" in path:
+                driver.execute_script("document.getElementById('cod_wms').value='1'; document.getElementById('filtro_nstatus_ped').value='0';")
+                time.sleep(5)
 
-    # [4] Pedidos
-    print("Processando Pedidos em Aberto...")
-    driver.get("https://sesce.clif.rvimola.com.br/Relsaidasgerals/filtrosaidas")
-    time.sleep(20)
-    Select(wait.until(EC.element_to_be_clickable((By.ID, "filtro_unidade")))).select_by_value("1")
-    time.sleep(5)
-    driver.execute_script("document.getElementById('cod_wms').value='1'; document.getElementById('filtro_nstatus_ped').value='0'; document.getElementById('RelsaidasgeralTipofiltro').value='1'; EscolhaTipoRelatorio();")
-    wait.until(EC.element_to_be_clickable((By.ID, "XLSX"))).click()
-    if aguardar_download(200): 
-        enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), "PEDIDOS EM ABERTO")
-
-    # [5] Saídas
-    print("Processando Saídas Concluídas...")
-    driver.get("https://sesce.clif.rvimola.com.br/Relsaidasconcluidas/listarprodutos")
-    time.sleep(15)
-    Select(wait.until(EC.element_to_be_clickable((By.ID, "filtro_unidade")))).select_by_value("1")
-    time.sleep(3)
-    driver.execute_script(f"document.getElementById('data_inicio').value = '{d_ini}'; document.getElementById('data_final').value = '{d_fim}'; document.getElementById('RelsaidasconcluidaTipofiltro').value = '1'; EscolhaTipoRelatorio();")
-    wait.until(EC.element_to_be_clickable((By.ID, "XLSX"))).click()
-    if aguardar_download(): 
-        enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), "SAÍDAS CONCLUÍDAS")
+            driver.execute_script(f"document.getElementById('{tipo_filtro_id}').value = '1'; EscolhaTipoRelatorio();")
+            wait.until(EC.element_to_be_clickable((By.ID, "XLSX"))).click()
+            
+            timeout_dl = 200 if "saidasgerals" in path else 120
+            if aguardar_download(timeout_dl):
+                enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), aba)
+        except Exception as e:
+            print(f"Erro na rotina {aba}: {e}")
 
 if __name__ == "__main__":
     for f in os.listdir(DOWNLOAD_PATH): 
@@ -170,41 +149,46 @@ if __name__ == "__main__":
     driver = None
     try:
         driver = configurar_driver()
-        print("Chrome aberto. Aguardando 10s...")
+        print("Chrome aberto. Aguardando estabilização...")
         time.sleep(10)
         
         wait = WebDriverWait(driver, 60)
         
         print(f"Acessando sistema: {URL_SISTEMA}")
         driver.get(URL_SISTEMA)
-        time.sleep(20)
+        time.sleep(25)
         
-        # PASSO NOVO: Clicar no botão "Entrar" da Home (Baseado no código fonte enviado)
+        # CLIQUE NO BOTÃO "ENTRAR" VIA JAVASCRIPT (Baseado no seu código fonte)
+        print("Buscando botão inicial 'Entrar'...")
         try:
-            print("Detectando botão inicial 'Entrar'...")
-            btn_entrar_home = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), 'Entrar')]")))
-            driver.execute_script("arguments[0].click();", btn_entrar_home)
-            print("Botão inicial clicado. Aguardando tela de login...")
-            time.sleep(15)
-        except Exception as e:
-            print(f"Aviso: Botão inicial não encontrado ou já estamos na tela de login. Erro: {e}")
+            driver.execute_script("""
+                let btn = Array.from(document.querySelectorAll('a, button')).find(el => el.textContent.trim() === 'Entrar');
+                if(btn) btn.click();
+            """)
+            print("Comando de clique enviado. Aguardando tela de login (20s)...")
+            time.sleep(20)
+        except:
+            print("Botão não interagido, tentando seguir...")
 
         print("Preenchendo credenciais...")
-        # Usamos seletores flexíveis para o login
-        user_input = wait.until(EC.presence_of_element_located((By.NAME, "data[Usuario][login]")))
-        user_input.send_keys(USUARIO)
+        # Seletores flexíveis para IDs ou Names
+        try:
+            u_field = wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "input[name*='login'], #UsuarioLogin")))
+            u_field.send_keys(USUARIO)
+            
+            p_field = driver.find_element(By.CSS_SELECTOR, "input[name*='senha'], #UsuarioSenha")
+            p_field.send_keys(SENHA)
+            p_field.send_keys(Keys.ENTER)
+            print("Login submetido.")
+        except Exception as e:
+            print(f"Erro ao localizar campos de login: {e}")
+            raise e
         
-        pass_input = driver.find_element(By.NAME, "data[Usuario][senha]")
-        pass_input.send_keys(SENHA)
-        pass_input.send_keys(Keys.ENTER)
-        
-        print("Login enviado. Aguardando Dashboard (25s)...")
         time.sleep(25) 
-        
         realizar_ronda(driver, wait)
         
     except Exception as e:
-        print(f"!!! ERRO NA EXECUÇÃO !!!: {e}")
+        print(f"!!! ERRO FATAL !!!: {e}")
     finally:
         if driver:
             driver.quit()
