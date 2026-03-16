@@ -21,12 +21,12 @@ jobs:
           pip install pandas gspread oauth2client selenium==4.10.0 openpyxl
 
       - name: Rodar Script do Thiago
-        run: python robo_mestre.py
+        run: python main.py  # Alterado de robo_mestre.py para main.py
         env:
           USUARIO: ${{ secrets.USUARIO_CLIF }}
           SENHA: ${{ secrets.SENHA_CLIF }}
           GOOGLE_CHAVE_JSON: ${{ secrets.GOOGLE_CHAVE }}
-
+          
       - name: Upload da Foto de Erro
         uses: actions/upload-artifact@v4
         if: always()
