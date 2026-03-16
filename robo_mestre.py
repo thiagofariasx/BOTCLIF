@@ -44,22 +44,18 @@ def obter_datas_mes_atual():
 
 def configurar_driver():
     options = webdriver.ChromeOptions()
-    options.add_argument("--headless=new") # Versão mais moderna do headless
+    options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-    options.add_argument("--remote-allow-origins=*")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--proxy-server='direct://'")
+    options.add_argument("--proxy-bypass-list=*")
+    options.add_argument("--start-maximized")
     
-    prefs = {
-        "download.default_directory": DOWNLOAD_PATH,
-        "download.prompt_for_download": False,
-        "download.directory_upgrade": True,
-        "safebrowsing.enabled": True
-    }
-    options.add_experimental_option("prefs", prefs)
+    # Esta linha aqui é a que mata o erro de localhost:
+    options.add_argument("--remote-debugging-pipe")
     
-    # Simples assim. Sem Service, sem Manager. 
-    # O GitHub se vira para achar o binário se as opções estiverem certas.
     return webdriver.Chrome(options=options)
 def aguardar_download(timeout=90):
     segundos = 0
