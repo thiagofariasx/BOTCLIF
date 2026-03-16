@@ -22,6 +22,7 @@ try:
 except ImportError:
     functions_framework = None
 
+# Ajuste de encoding
 if sys.stdout.encoding != 'utf-8':
     sys.stdout.reconfigure(encoding='utf-8')
 
@@ -51,21 +52,19 @@ def configurar_driver():
     
     prefs = {"download.default_directory": DOWNLOAD_PATH}
     options.add_experimental_option("prefs", prefs)
-    options.page_load_strategy = 'none'
+    options.page_load_strategy = 'eager' # Carrega o essencial primeiro
     
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
-    driver.set_page_load_timeout(180)
+    driver.set_page_load_timeout(120)
     return driver
 
-def aguardar_download(timeout=180):
+def aguardar_download(timeout=150):
     segundos = 0
     while segundos < timeout:
         arquivos = os.listdir(DOWNLOAD_PATH)
-        baixando = any(".crdownload" in f or ".tmp" in f for f in arquivos)
-        finalizado = any(f.endswith((".xlsx", ".xls")) for f in arquivos)
-        if finalizado and not baixando:
-            time.sleep(5)
+        if any(f.endswith((".xlsx", ".xls")) for f in arquivos) and not any(".crdownload" in f for f in arquivos):
+            time.sleep(3) # Tempo para o SO liberar o arquivo
             return True
         time.sleep(1)
         segundos += 1
@@ -79,25 +78,23 @@ def enviar_para_google(caminho_excel, nome_aba, chave_path):
         client = gspread.authorize(creds)
         sheet = client.open_by_url(PLANILHA_URL).worksheet(nome_aba)
         
-        df = pd.read_excel(caminho_excel)
+        df = pd.read_excel(caminho_excel).fillna("")
+        # Remove caracteres que quebram o Sheets
         for col in df.columns:
-            if pd.api.types.is_datetime64_any_dtype(df[col]):
-                df[col] = df[col].dt.strftime('%d/%m/%Y %H:%M:%S')
             if df[col].dtype == 'object':
                 df[col] = df[col].astype(str).str.replace("'", "").str.strip()
         
-        df = df.fillna("")
         dados = [df.columns.values.tolist()] + df.values.tolist()
-        
         sheet.clear()
         sheet.update(dados)
-        sheet.update_acell('Z1', f"Atualizado (SP): {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+        sheet.update_acell('Z1', f"Atualizado: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
         os.remove(caminho_excel)
-        print(f"--- {nome_aba} OK ---")
+        print(f"--- SUCESSO: {nome_aba} ---")
     except Exception as e:
-        print(f"Erro Sheets {nome_aba}: {e}")
+        print(f"Erro Google Sheets {nome_aba}: {e}")
 
-def realizar_ronda(driver, wait, chave_path):
+def realizar_ronda(driver, chave_path):
+    print("Iniciando downloads...")
     rotinas = [
         ("Relentradaspendentes/filtroentradas", "ENTRADAS PENDENTES", "RelentradaspendenteTipofiltro"),
         ("Relentradasconcluidasdetalhados/filtroentradas", "ENTRADAS CONCLUÍDAS", "RelentradasconcluidasdetalhadoTipofiltro"),
@@ -109,85 +106,79 @@ def realizar_ronda(driver, wait, chave_path):
 
     for path, aba, tipo_filtro_id in rotinas:
         try:
-            print(f"Processando {aba}...")
+            print(f"Acessando {aba}...")
             driver.get(f"{URL_SISTEMA}/{path}")
-            time.sleep(20)
+            time.sleep(15)
             
-            # Limpa qualquer modal que esteja bloqueando a tela
-            driver.execute_script("$('.ui-dialog').remove(); $('.ui-widget-overlay').remove();")
+            # Injeção de JS para evitar erros de jQuery ($ is not a function)
+            js_script = f"""
+                var unidade = document.getElementById('filtro_unidade');
+                if(unidade) unidade.value = '1';
+                var d_ini = document.getElementById('data_inicio');
+                if(d_ini) d_ini.value = '{d_ini}';
+                var d_fim = document.getElementById('data_final');
+                if(d_fim) d_fim.value = '{d_fim}';
+                var tipo = document.getElementById('{tipo_filtro_id}');
+                if(tipo) tipo.value = '1';
+                
+                // Dispara a função do sistema se ela existir
+                if(typeof EscolhaTipoRelatorio === 'function') {{
+                    EscolhaTipoRelatorio();
+                    setTimeout(function() {{
+                        var btn = document.getElementById('XLSX');
+                        if(btn) btn.click();
+                    }}, 2000);
+                }}
+            """
+            driver.execute_script(js_script)
             
-            # Espera e seleciona Unidade
-            el_unidade = wait.until(EC.presence_of_element_located((By.ID, "filtro_unidade")))
-            Select(el_unidade).select_by_value("1")
-            
-            if "concluidas" in path:
-                driver.execute_script(f"document.getElementById('data_inicio').value='{d_ini}'; document.getElementById('data_final').value='{d_fim}';")
-            
-            if "saidasgerals" in path:
-                driver.execute_script("document.getElementById('cod_wms').value='1'; document.getElementById('filtro_nstatus_ped').value='0';")
-                time.sleep(2)
-
-            # Dispara o XLSX
-            driver.execute_script(f"document.getElementById('{tipo_filtro_id}').value = '1'; EscolhaTipoRelatorio();")
-            time.sleep(5)
-            driver.execute_script("document.getElementById('XLSX').click();")
-            
-            if aguardar_download(180):
-                arquivo_recente = max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime)
-                enviar_para_google(arquivo_recente, aba, chave_path)
+            if aguardar_download():
+                arq = max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime)
+                enviar_para_google(arq, aba, chave_path)
+            else:
+                driver.save_screenshot(f"erro_timeout_{aba}.png")
         except Exception as e:
             print(f"Erro em {aba}: {e}")
+            driver.save_screenshot(f"erro_fatal_{aba}.png")
 
 def executar_robo():
     USUARIO = os.environ.get('USUARIO')
     SENHA = os.environ.get('SENHA')
     CHAVE_JSON_CONTENT = os.environ.get('GOOGLE_CHAVE_JSON')
+    CHAVE_PATH = "/tmp/google_key_clif.json"
     
-    CHAVE_TEMP_PATH = "/tmp/google_key_clif.json"
-    if CHAVE_JSON_CONTENT:
-        with open(CHAVE_TEMP_PATH, 'w') as f:
-            json.dump(json.loads(CHAVE_JSON_CONTENT), f)
+    if not CHAVE_JSON_CONTENT:
+        print("Erro: GOOGLE_CHAVE_JSON não configurada.")
+        return
 
-    print(f"--- INÍCIO DA RONDA (SÃO PAULO): {datetime.now()} ---")
-    
-    for f in os.listdir(DOWNLOAD_PATH):
-        try: os.remove(os.path.join(DOWNLOAD_PATH, f))
-        except: pass
+    with open(CHAVE_PATH, 'w') as f:
+        json.dump(json.loads(CHAVE_JSON_CONTENT), f)
 
     driver = configurar_driver()
-    wait = WebDriverWait(driver, 60)
-    
     try:
-        print("Abrindo tela de login...")
+        print("Abrindo login...")
         driver.get(f"{URL_SISTEMA}/usuarios/login")
+        time.sleep(15)
+        
+        # Injeção direta de login
+        driver.execute_script(f"""
+            document.getElementById('UsuarioLogin').value = '{USUARIO}';
+            document.getElementById('UsuarioSenha').value = '{SENHA}';
+            document.getElementById('UsuarioLoginForm').submit();
+        """)
         time.sleep(20)
-
-        print("Simulando login por teclado...")
-        actions = ActionChains(driver)
-        actions.move_by_offset(100, 100).click().perform() # Clique lateral para foco
-        time.sleep(2)
         
-        # Sequência de tabs para garantir foco no campo de usuário
-        for _ in range(5): 
-            actions.send_keys(Keys.TAB).perform()
-            time.sleep(0.2)
+        driver.save_screenshot("pos_login.png")
+        
+        if "login" not in driver.current_url:
+            print("Login realizado. Iniciando Ronda...")
+            realizar_ronda(driver, CHAVE_PATH)
+        else:
+            print("Falha no Login. Verifique as credenciais ou CAPTCHA.")
             
-        actions.send_keys(USUARIO).send_keys(Keys.TAB).send_keys(SENHA).send_keys(Keys.ENTER).perform()
-        time.sleep(5)
-        actions.send_keys(Keys.ENTER).perform() # Reforço do Enter
-        
-        print("Login enviado. Aguardando Dashboard (45s)...")
-        time.sleep(45) 
-        
-        realizar_ronda(driver, wait, CHAVE_TEMP_PATH)
-        print("--- SUCESSO TOTAL ---")
-        
-    except Exception as e:
-        print(f"!!! ERRO FATAL !!!: {e}")
     finally:
         driver.quit()
-        if os.path.exists(CHAVE_TEMP_PATH):
-            os.remove(CHAVE_TEMP_PATH)
+        if os.path.exists(CHAVE_PATH): os.remove(CHAVE_PATH)
 
 if functions_framework:
     @functions_framework.http
