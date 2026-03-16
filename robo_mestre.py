@@ -22,6 +22,16 @@ if sys.stdout.encoding != 'utf-8':
 URL_SISTEMA = "https://sesce.clif.rvimola.com.br"
 PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1_cFPlPpeFqbWR6-t8MS1XeyxCmfw2mC84ZljkMIMZFc/edit#gid=0"
 
+# LISTA DE PROXIES BRASILEIROS (Baseado na sua imagem)
+# Adicionei os mais rápidos da sua lista para rotacionar
+LISTA_PROXIES = [
+    "186.235.123.3:8080",
+    "45.168.49.2:8080",
+    "179.185.89.251:8080",
+    "186.235.201.10:8080",
+    "186.192.78.5:8080"
+]
+
 USUARIO = os.environ.get('USUARIO')
 SENHA = os.environ.get('SENHA')
 CHAVE_JSON_CONTENT = os.environ.get('GOOGLE_CHAVE_JSON')
@@ -43,19 +53,23 @@ def obter_datas_mes_atual():
     data_fim = hoje.replace(day=ultimo_dia).strftime("%d/%m/%Y")
     return data_ini, data_fim
 
-def configurar_driver():
+def configurar_driver(proxy_atual=None):
     options = webdriver.ChromeOptions()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-    options.add_argument("--remote-debugging-pipe")
     options.add_argument("--window-size=1920,1080")
-    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
     
+    if proxy_atual:
+        print(f"Configurando Proxy Brasileiro: {proxy_atual}")
+        options.add_argument(f'--proxy-server={proxy_atual}')
+        
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
     options.page_load_strategy = 'none' 
+    
     driver = webdriver.Chrome(options=options)
-    driver.set_page_load_timeout(180)
+    driver.set_page_load_timeout(120)
     return driver
 
 def aguardar_download(timeout=180): 
@@ -113,15 +127,11 @@ def realizar_ronda(driver, wait):
             print(f"Processando {aba}...")
             driver.get(f"https://sesce.clif.rvimola.com.br/{path}")
             time.sleep(25)
-            
             Select(wait.until(EC.presence_of_element_located((By.ID, "filtro_unidade")))).select_by_value("1")
             
             if "concluidas" in path:
                 driver.execute_script(f"document.getElementById('data_inicio').value='{d_ini}'; document.getElementById('data_final').value='{d_fim}';")
-            if "saidasgerals" in path:
-                driver.execute_script("document.getElementById('cod_wms').value='1'; document.getElementById('filtro_nstatus_ped').value='0';")
-                time.sleep(5)
-
+            
             driver.execute_script(f"document.getElementById('{tipo_filtro_id}').value = '1'; EscolhaTipoRelatorio();")
             time.sleep(5)
             driver.execute_script("document.getElementById('XLSX').click();")
@@ -139,52 +149,45 @@ if __name__ == "__main__":
     print(f"--- INÍCIO DA RONDA: {datetime.now()} ---")
     
     driver = None
-    try:
-        driver = configurar_driver()
-        
-        print("Acessando tela de login diretamente...")
-        driver.get("https://sesce.clif.rvimola.com.br/usuarios/login")
-        print("Aguardando carregamento (45s)...")
-        time.sleep(45)
+    logado = False
 
-        print("Iniciando sequência de teclas 'Cega'...")
-        actions = ActionChains(driver)
-        
-        # Clica no centro para garantir foco
-        actions.move_by_offset(500, 300).click().perform()
-        time.sleep(2)
-        
-        for _ in range(3):
-            actions.send_keys(Keys.TAB).perform()
-            time.sleep(0.5)
+    # TENTA CADA PROXY DA LISTA ATÉ UM FUNCIONAR
+    for proxy in LISTA_PROXIES:
+        try:
+            if driver: driver.quit()
+            driver = configurar_driver(proxy)
             
-        print("Digitando Usuário...")
-        actions.send_keys(USUARIO).perform()
-        time.sleep(1)
-        
-        print("Digitando Senha...")
-        actions.send_keys(Keys.TAB).send_keys(SENHA).perform()
-        time.sleep(1)
-        
-        print("Enviando Enter...")
-        actions.send_keys(Keys.ENTER).perform()
-        
-        print("Aguardando Dashboard (45s)...")
-        time.sleep(45) 
-        
-        # --- TIRA FOTO DA TELA PARA VER O QUE ACONTECEU ---
-        driver.save_screenshot("erro_login.png")
-        print("Foto da tela capturada (erro_login.png).")
-        
-        print(f"Página atual: {driver.current_url}")
-        
-        realizar_ronda(driver, WebDriverWait(driver, 60))
-        
-    except Exception as e:
-        print(f"!!! ERRO FATAL !!!: {e}")
-        if driver:
-            driver.save_screenshot("erro_login.png")
-    finally:
-        if driver: driver.quit()
-        if os.path.exists(CHAVE_JSON): os.remove(CHAVE_JSON)
-        print(f"--- FIM DO PROCESSO: {datetime.now()} ---")
+            print(f"Testando conexão com o CLIF via {proxy}...")
+            driver.get("https://sesce.clif.rvimola.com.br/usuarios/login")
+            time.sleep(30)
+            
+            # Se o título da página aparecer, o proxy funcionou
+            if "CLIF" in driver.title:
+                print("Conexão estabelecida! Iniciando Login...")
+                
+                actions = ActionChains(driver)
+                actions.move_by_offset(500, 300).click().perform()
+                time.sleep(2)
+                for _ in range(3): actions.send_keys(Keys.TAB).perform()
+                
+                actions.send_keys(USUARIO).send_keys(Keys.TAB).send_keys(SENHA).send_keys(Keys.ENTER).perform()
+                time.sleep(40)
+                
+                print(f"Página após login: {driver.current_url}")
+                realizar_ronda(driver, WebDriverWait(driver, 60))
+                logado = True
+                break # Sai do loop de proxies se deu certo
+            else:
+                print(f"Proxy {proxy} falhou em carregar o site (Título não encontrado).")
+                
+        except Exception as e:
+            print(f"Erro com o proxy {proxy}: {e}")
+            continue
+
+    if not logado:
+        print("!!! TODOS OS PROXIES FALHARAM !!!")
+        if driver: driver.save_screenshot("erro_total.png")
+    
+    if driver: driver.quit()
+    if os.path.exists(CHAVE_JSON): os.remove(CHAVE_JSON)
+    print(f"--- FIM DO PROCESSO: {datetime.now()} ---")
