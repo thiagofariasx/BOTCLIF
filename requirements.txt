@@ -1,0 +1,7 @@
+functions-framework==3.*
+pandas
+gspread
+oauth2client
+selenium
+webdriver-manager
+openpyxl
