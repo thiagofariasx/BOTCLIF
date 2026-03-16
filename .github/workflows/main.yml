@@ -22,7 +22,7 @@ jobs:
           pip install pandas gspread oauth2client selenium webdriver-manager openpyxl
 
       - name: Rodar Script do Thiago
-        run: python bot_clif.py
+        run: python robo_mestre.py
         env:
           USUARIO: ${{ secrets.USUARIO_CLIF }}
           SENHA: ${{ secrets.SENHA_CLIF }}
