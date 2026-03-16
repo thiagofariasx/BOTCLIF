@@ -9,23 +9,17 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout do codigo
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Configurar Python
+      - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      # Esta ação instala o Chrome e o Driver compatível automaticamente
-      - name: Setup Chrome
-        uses: browser-actions/setup-chrome@v1
-        with:
-          chrome-version: stable
-
       - name: Instalar Dependencias
         run: |
-          pip install pandas gspread oauth2client selenium==4.10.0 openpyxl undetected-chromedriver
+          pip install pandas gspread oauth2client selenium==4.10.0 openpyxl
+          # Removi o undetected-chromedriver e o webdriver-manager aqui
 
       - name: Rodar Script do Thiago
         run: python robo_mestre.py
