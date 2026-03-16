@@ -16,16 +16,20 @@ from selenium.webdriver.common.action_chains import ActionChains
 from datetime import datetime
 import calendar
 import sys
-import functions_framework
 
-# Ajuste de encoding para evitar erros de caracteres no log
+# Tenta importar o framework do Google, se falhar (no GitHub), segue normal
+try:
+    import functions_framework
+except ImportError:
+    functions_framework = None
+
+# Ajuste de encoding
 if sys.stdout.encoding != 'utf-8':
     sys.stdout.reconfigure(encoding='utf-8')
 
 # --- CONFIGURAÇÕES ---
 URL_SISTEMA = "https://sesce.clif.rvimola.com.br"
 PLANILHA_URL = "https://docs.google.com/spreadsheets/d/1_cFPlPpeFqbWR6-t8MS1XeyxCmfw2mC84ZljkMIMZFc/edit#gid=0"
-# Pasta temporária (única permitida no Google Cloud e GitHub Actions)
 DOWNLOAD_PATH = "/tmp/downloads" 
 
 if not os.path.exists(DOWNLOAD_PATH):
@@ -34,7 +38,7 @@ if not os.path.exists(DOWNLOAD_PATH):
 def obter_datas_mes_atual():
     hoje = datetime.now()
     data_ini = hoje.replace(day=1).strftime("%d/%m/%Y")
-    ultimo_dia = calendar.monthrange(hoje.year, hoye.month)[1]
+    ultimo_dia = calendar.monthrange(hoje.year, hoje.month)[1]
     data_fim = hoje.replace(day=ultimo_dia).strftime("%d/%m/%Y")
     return data_ini, data_fim
 
@@ -47,10 +51,9 @@ def configurar_driver():
     options.add_argument("--window-size=1920,1080")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
     
-    # Configura diretório de download
     prefs = {"download.default_directory": DOWNLOAD_PATH}
     options.add_experimental_option("prefs", prefs)
-    options.page_load_strategy = 'none' # Para não travar em páginas pesadas
+    options.page_load_strategy = 'none'
     
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
@@ -61,12 +64,10 @@ def aguardar_download(timeout=180):
     segundos = 0
     while segundos < timeout:
         arquivos = os.listdir(DOWNLOAD_PATH)
-        # Verifica se ainda há arquivos temporários de download
         baixando = any(".crdownload" in f or ".tmp" in f for f in arquivos)
-        # Verifica se já existe um arquivo finalizado
         finalizado = any(f.endswith((".xlsx", ".xls")) for f in arquivos)
         if finalizado and not baixando:
-            time.sleep(5) # Margem de segurança para fechar o arquivo
+            time.sleep(5)
             return True
         time.sleep(1)
         segundos += 1
@@ -74,14 +75,13 @@ def aguardar_download(timeout=180):
 
 def enviar_para_google(caminho_excel, nome_aba, chave_path):
     try:
-        print(f"Lendo arquivo para enviar para aba: {nome_aba}")
+        print(f"Enviando dados para aba: {nome_aba}")
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = ServiceAccountCredentials.from_json_keyfile_name(chave_path, scope)
         client = gspread.authorize(creds)
         sheet = client.open_by_url(PLANILHA_URL).worksheet(nome_aba)
         
         df = pd.read_excel(caminho_excel)
-        # Formata colunas de data e remove aspas simples que quebram o Google Sheets
         for col in df.columns:
             if pd.api.types.is_datetime64_any_dtype(df[col]):
                 df[col] = df[col].dt.strftime('%d/%m/%Y %H:%M:%S')
@@ -93,11 +93,10 @@ def enviar_para_google(caminho_excel, nome_aba, chave_path):
         
         sheet.clear()
         sheet.update(dados)
-        sheet.update_acell('Z1', f"Atualizado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
-        print(f"--- SUCESSO NA ABA: {nome_aba} ---")
-        os.remove(caminho_excel) # Limpa para o próximo download
+        sheet.update_acell('Z1', f"Atualizado (SP): {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+        os.remove(caminho_excel)
     except Exception as e:
-        print(f"Erro ao processar Google Sheets na aba {nome_aba}: {e}")
+        print(f"Erro Google Sheets na aba {nome_aba}: {e}")
 
 def realizar_ronda(driver, wait, chave_path):
     print("Iniciando rotinas de download de relatórios...")
@@ -112,18 +111,19 @@ def realizar_ronda(driver, wait, chave_path):
 
     for path, aba, tipo_filtro_id in rotinas:
         try:
-            print(f"Acessando: {aba}...")
+            print(f"Processando {aba}...")
             driver.get(f"{URL_SISTEMA}/{path}")
             time.sleep(25)
             
-            # Seleciona Unidade
+            # Unidade Operacional
             Select(wait.until(EC.presence_of_element_located((By.ID, "filtro_unidade")))).select_by_value("1")
             
-            # Se for relatório de concluídos, preenche as datas do mês
             if "concluidas" in path:
                 driver.execute_script(f"document.getElementById('data_inicio').value='{d_ini}'; document.getElementById('data_final').value='{d_fim}';")
-            
-            # Filtro por XLSX e disparo do relatório
+            if "saidasgerals" in path:
+                driver.execute_script("document.getElementById('cod_wms').value='1'; document.getElementById('filtro_nstatus_ped').value='0';")
+                time.sleep(5)
+
             driver.execute_script(f"document.getElementById('{tipo_filtro_id}').value = '1'; EscolhaTipoRelatorio();")
             time.sleep(5)
             driver.execute_script("document.getElementById('XLSX').click();")
@@ -132,24 +132,21 @@ def realizar_ronda(driver, wait, chave_path):
                 arquivo_recente = max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime)
                 enviar_para_google(arquivo_recente, aba, chave_path)
         except Exception as e:
-            print(f"Falha na rotina {aba}: {e}")
+            print(f"Erro na aba {aba}: {e}")
 
-@functions_framework.http
-def main(request):
-    # Obtém segredos das variáveis de ambiente
+def executar_robo():
     USUARIO = os.environ.get('USUARIO')
     SENHA = os.environ.get('SENHA')
     CHAVE_JSON_CONTENT = os.environ.get('GOOGLE_CHAVE_JSON')
     
-    # Cria arquivo temporário da credencial Google
     CHAVE_TEMP_PATH = "/tmp/google_key_clif.json"
     if CHAVE_JSON_CONTENT:
         with open(CHAVE_TEMP_PATH, 'w') as f:
             json.dump(json.loads(CHAVE_JSON_CONTENT), f)
 
-    print(f"--- INÍCIO DA RONDA: {datetime.now()} ---")
+    print(f"--- INÍCIO DA RONDA (SÃO PAULO): {datetime.now()} ---")
     
-    # Limpa downloads antigos se houver
+    # Limpa a pasta temporária antes de começar
     for f in os.listdir(DOWNLOAD_PATH):
         try: os.remove(os.path.join(DOWNLOAD_PATH, f))
         except: pass
@@ -164,7 +161,7 @@ def main(request):
 
         print("Simulando login por teclado...")
         actions = ActionChains(driver)
-        actions.move_by_offset(500, 300).click().perform() # Foco na página
+        actions.move_by_offset(500, 300).click().perform()
         time.sleep(2)
         
         for _ in range(3):
@@ -172,25 +169,26 @@ def main(request):
             time.sleep(0.5)
             
         actions.send_keys(USUARIO).send_keys(Keys.TAB).send_keys(SENHA).send_keys(Keys.ENTER).perform()
-        print("Login submetido. Aguardando estabilização do Dashboard...")
+        print("Login enviado. Aguardando estabilização...")
         time.sleep(45) 
         
         realizar_ronda(driver, wait, CHAVE_TEMP_PATH)
-        
-        print(f"--- FIM DA RONDA COM SUCESSO ---")
-        return "Sucesso!", 200
+        print("--- SUCESSO TOTAL ---")
         
     except Exception as e:
         print(f"!!! ERRO NO PROCESSO !!!: {e}")
-        return f"Erro fatal: {str(e)}", 500
     finally:
         driver.quit()
         if os.path.exists(CHAVE_TEMP_PATH):
             os.remove(CHAVE_TEMP_PATH)
 
-# Caso queira rodar localmente para testes
+# Wrapper para o Cloud Functions
+if functions_framework:
+    @functions_framework.http
+    def main(request):
+        executar_robo()
+        return "OK", 200
+
+# Execução manual ou GitHub
 if __name__ == "__main__":
-    # Simula um request para teste local
-    class MockRequest:
-        pass
-    main(MockRequest())
+    executar_robo()
