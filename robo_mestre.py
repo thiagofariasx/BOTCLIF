@@ -44,6 +44,7 @@ def obter_datas_mes_atual():
 
 def configurar_driver():
     from selenium.webdriver.chrome.service import Service
+    from webdriver_manager.chrome import ChromeDriverManager
     
     options = webdriver.ChromeOptions()
     options.add_argument("--headless")
@@ -59,11 +60,8 @@ def configurar_driver():
     }
     options.add_experimental_option("prefs", prefs)
     
-    # FORÇANDO O CAMINHO DO GITHUB ACTIONS
-    # No Ubuntu do GitHub, o driver fica sempre aqui:
-    service = Service(executable_path="/usr/bin/chromedriver")
-    options.binary_location = "/usr/bin/google-chrome"
-    
+    # O WebDriver Manager vai baixar a versão certa pro Chrome que instalamos no GitHub
+    service = Service(ChromeDriverManager().install())
     return webdriver.Chrome(service=service, options=options)
 def aguardar_download(timeout=90):
     segundos = 0
