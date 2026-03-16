@@ -43,18 +43,16 @@ def obter_datas_mes_atual():
     return data_ini, data_fim
 
 def configurar_driver():
-    options = webdriver.ChromeOptions()
-    options.add_argument("--headless=new")
+    import undetected_chromedriver as uc
+    
+    options = uc.ChromeOptions()
+    options.add_argument("--headless")  # Roda escondido
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-gpu")
     
-    # Isso aqui evita que o Chrome tente usar a rede interna (localhost) para se comunicar
-    options.add_argument("--remote-debugging-pipe")
-    
-    # No GitHub Actions, com o setup-chrome acima, não precisamos passar caminhos. 
-    # O Selenium 4.10 acha tudo sozinho.
-    return webdriver.Chrome(options=options)
+    # Isso aqui força o driver a não tentar conexões de rede desnecessárias no início
+    driver = uc.Chrome(options=options, version_main=114) # Ajustamos a versão para estabilidade
+    return driver
 def aguardar_download(timeout=90):
     segundos = 0
     while segundos < timeout:
