@@ -25,7 +25,7 @@ jobs:
 
       - name: Instalar Dependencias
         run: |
-          pip install pandas gspread oauth2client selenium==4.10.0 openpyxl
+          pip install pandas gspread oauth2client selenium==4.10.0 openpyxl undetected-chromedriver
 
       - name: Rodar Script do Thiago
         run: python robo_mestre.py
