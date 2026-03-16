@@ -46,12 +46,12 @@ def configurar_driver():
     import undetected_chromedriver as uc
     
     options = uc.ChromeOptions()
-    options.add_argument("--headless")  # Roda escondido
+    options.add_argument("--headless") 
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     
-    # Isso aqui força o driver a não tentar conexões de rede desnecessárias no início
-    driver = uc.Chrome(options=options, version_main=114) # Ajustamos a versão para estabilidade
+    # Deixamos sem o version_main para ele se auto-ajustar
+    driver = uc.Chrome(options=options) 
     return driver
 def aguardar_download(timeout=90):
     segundos = 0
