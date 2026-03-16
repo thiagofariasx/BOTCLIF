@@ -2,8 +2,8 @@ name: Atualizar Relatorios CLIF
 
 on:
   schedule:
-    - cron: '*/20 * * * *' # Roda a cada 20 minutos
-  workflow_dispatch: # Adiciona um botão para você rodar na mão quando quiser
+    - cron: '*/20 * * * *'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -17,14 +17,14 @@ jobs:
         with:
           python-version: '3.10'
 
-          - name: Instalar Chrome e Driver
+      - name: Instalar Chrome e Driver
         run: |
           sudo apt-get update
-          sudo apt-get install -join google-chrome-stable chromedriver
+          sudo apt-get install --yes google-chrome-stable chromedriver
 
       - name: Instalar Dependencias
         run: |
-          pip install pandas gspread oauth2client selenium webdriver-manager openpyxl
+          pip install pandas gspread oauth2client selenium openpyxl
 
       - name: Rodar Script do Thiago
         run: python robo_mestre.py
