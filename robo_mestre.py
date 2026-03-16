@@ -43,23 +43,28 @@ def obter_datas_mes_atual():
     return data_ini, data_fim
 
 def configurar_driver():
-    from selenium.webdriver.chrome.service import Service
-    
     options = webdriver.ChromeOptions()
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-    
-    # ESSA LINHA É A CHAVE: Ela evita o erro de "cannot connect to 127.0.0.1"
-    # Ela faz o código falar com o Chrome via "tubos" de memória, não via rede.
     options.add_argument("--remote-debugging-pipe")
     
-    # Ignora erros de certificado e extensões que travam o boot
-    options.add_argument("--disable-extensions")
-    options.add_argument("--ignore-certificate-errors")
+    # NOVAS FLAGS PARA EVITAR O TIMEOUT DO RENDERER:
+    options.add_argument("--disable-renderer-backgrounding")
+    options.add_argument("--disable-backgrounding-occluded-windows")
+    options.add_argument("--disable-ipc-flooding-protection")
     
-    return webdriver.Chrome(options=options)
+    # Isso aqui diz para o Chrome não esperar a página carregar 100% (imagens, etc) 
+    # para começar a trabalhar. Ajuda muito em servidores lentos.
+    options.page_load_strategy = 'eager' 
+    
+    driver = webdriver.Chrome(options=options)
+    
+    # Aumentamos o tempo limite de espera do próprio comando do Chrome
+    driver.set_page_load_timeout(120) 
+    
+    return driver
 def aguardar_download(timeout=90):
     segundos = 0
     while segundos < timeout:
