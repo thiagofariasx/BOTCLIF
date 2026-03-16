@@ -13,7 +13,7 @@ from datetime import datetime
 import calendar
 import sys
 
-# Ajuste de encoding para evitar erros no log do GitHub
+# Ajuste de encoding
 if sys.stdout.encoding != 'utf-8':
     sys.stdout.reconfigure(encoding='utf-8')
 
@@ -49,22 +49,17 @@ def configurar_driver():
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument("--remote-debugging-pipe")
+    options.add_argument("--window-size=1920,1080")
     
-    # Flags para evitar que o renderer do Chrome trave no servidor
+    # Flags de estabilidade
     options.add_argument("--disable-renderer-backgrounding")
     options.add_argument("--disable-backgrounding-occluded-windows")
     options.add_argument("--disable-ipc-flooding-protection")
-    options.add_argument("--disable-browser-side-navigation")
     
-    # ESTRATÉGIA DE CARREGAMENTO: 'none' faz o Selenium não esperar o site carregar 100%
-    # Nós controlaremos o tempo manualmente com time.sleep()
+    # Usaremos 'none' para evitar travas de renderer no GitHub
     options.page_load_strategy = 'none' 
-    
     driver = webdriver.Chrome(options=options)
-    
-    # Timeout de 3 minutos para garantir que ele não desista fácil
     driver.set_page_load_timeout(180) 
-    
     return driver
 
 def aguardar_download(timeout=180): 
@@ -74,7 +69,7 @@ def aguardar_download(timeout=180):
         baixando = any(".crdownload" in f or ".tmp" in f for f in arquivos)
         finalizado = any(f.endswith((".xlsx", ".xls")) for f in arquivos)
         if finalizado and not baixando:
-            time.sleep(5) # Respiro para garantir escrita do arquivo
+            time.sleep(5)
             return True
         time.sleep(1)
         segundos += 1
@@ -104,15 +99,15 @@ def enviar_para_google(caminho_excel, nome_aba):
         print(f"--- SUCESSO: {nome_aba} ATUALIZADA ---")
         os.remove(caminho_excel) 
     except Exception as e:
-        print(f"Erro ao enviar para Google Sheets: {e}")
+        print(f"Erro Google Sheets: {e}")
 
 def realizar_ronda(driver, wait):
     print("Iniciando rotinas de download...")
     
     # [1] Pendentes
-    print("Baixando Pendentes...")
+    print("Processando Pendentes...")
     driver.get("https://sesce.clif.rvimola.com.br/Relentradaspendentes/filtroentradas")
-    time.sleep(10) # Espera carregar a página
+    time.sleep(15)
     Select(wait.until(EC.element_to_be_clickable((By.ID, "filtro_unidade")))).select_by_value("1")
     time.sleep(3)
     driver.execute_script("document.getElementById('RelentradaspendenteTipofiltro').value = '1'; EscolhaTipoRelatorio();")
@@ -120,11 +115,11 @@ def realizar_ronda(driver, wait):
     if aguardar_download(): 
         enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), "ENTRADAS PENDENTES")
 
-    # [2] Concluidas
-    print("Baixando Concluídas...")
+    # [2] Concluídas
+    print("Processando Concluídas...")
     d_ini, d_fim = obter_datas_mes_atual()
     driver.get("https://sesce.clif.rvimola.com.br/Relentradasconcluidasdetalhados/filtroentradas")
-    time.sleep(10)
+    time.sleep(15)
     Select(wait.until(EC.element_to_be_clickable((By.ID, "filtro_unidade")))).select_by_value("1")
     time.sleep(3)
     driver.execute_script(f"document.getElementById('data_inicio').value='{d_ini}'; document.getElementById('data_final').value='{d_fim}'; document.getElementById('RelentradasconcluidasdetalhadoTipofiltro').value='1'; EscolhaTipoRelatorio();")
@@ -133,9 +128,9 @@ def realizar_ronda(driver, wait):
         enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), "ENTRADAS CONCLUÍDAS")
 
     # [3] Bloqueados
-    print("Baixando Bloqueados...")
+    print("Processando Bloqueados...")
     driver.get("https://sesce.clif.rvimola.com.br/Relprodutosbloqueados/listarprodutos")
-    time.sleep(10)
+    time.sleep(15)
     Select(wait.until(EC.element_to_be_clickable((By.ID, "filtro_unidade")))).select_by_value("1")
     time.sleep(3)
     driver.execute_script("document.getElementById('RelprodutosbloqueadoTipofiltro').value='1'; EscolhaTipoRelatorio();")
@@ -144,20 +139,20 @@ def realizar_ronda(driver, wait):
         enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), "BLOQUEADOS")
 
     # [4] Pedidos
-    print("Baixando Pedidos em Aberto...")
+    print("Processando Pedidos em Aberto...")
     driver.get("https://sesce.clif.rvimola.com.br/Relsaidasgerals/filtrosaidas")
-    time.sleep(15) # Site pesado
+    time.sleep(20)
     Select(wait.until(EC.element_to_be_clickable((By.ID, "filtro_unidade")))).select_by_value("1")
     time.sleep(5)
     driver.execute_script("document.getElementById('cod_wms').value='1'; document.getElementById('filtro_nstatus_ped').value='0'; document.getElementById('RelsaidasgeralTipofiltro').value='1'; EscolhaTipoRelatorio();")
     wait.until(EC.element_to_be_clickable((By.ID, "XLSX"))).click()
-    if aguardar_download(180): 
+    if aguardar_download(200): 
         enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), "PEDIDOS EM ABERTO")
 
-    # [5] Saidas
-    print("Baixando Saídas Concluídas...")
+    # [5] Saídas
+    print("Processando Saídas Concluídas...")
     driver.get("https://sesce.clif.rvimola.com.br/Relsaidasconcluidas/listarprodutos")
-    time.sleep(10)
+    time.sleep(15)
     Select(wait.until(EC.element_to_be_clickable((By.ID, "filtro_unidade")))).select_by_value("1")
     time.sleep(3)
     driver.execute_script(f"document.getElementById('data_inicio').value = '{d_ini}'; document.getElementById('data_final').value = '{d_fim}'; document.getElementById('RelsaidasconcluidaTipofiltro').value = '1'; EscolhaTipoRelatorio();")
@@ -166,7 +161,6 @@ def realizar_ronda(driver, wait):
         enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), "SAÍDAS CONCLUÍDAS")
 
 if __name__ == "__main__":
-    # Limpeza de segurança
     for f in os.listdir(DOWNLOAD_PATH): 
         try: os.remove(os.path.join(DOWNLOAD_PATH, f))
         except: pass
@@ -176,25 +170,36 @@ if __name__ == "__main__":
     driver = None
     try:
         driver = configurar_driver()
-        print("Chrome aberto. Aguardando estabilização (10s)...")
+        print("Chrome aberto. Aguardando 10s...")
         time.sleep(10)
         
         wait = WebDriverWait(driver, 60)
         
         print(f"Acessando sistema: {URL_SISTEMA}")
         driver.get(URL_SISTEMA)
+        time.sleep(20)
         
-        print("Aguardando carregamento da página de login (30s)...")
-        time.sleep(30) # Tempo vital para o modo 'none' não falhar
-        
+        # PASSO NOVO: Clicar no botão "Entrar" da Home (Baseado no código fonte enviado)
+        try:
+            print("Detectando botão inicial 'Entrar'...")
+            btn_entrar_home = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), 'Entrar')]")))
+            driver.execute_script("arguments[0].click();", btn_entrar_home)
+            print("Botão inicial clicado. Aguardando tela de login...")
+            time.sleep(15)
+        except Exception as e:
+            print(f"Aviso: Botão inicial não encontrado ou já estamos na tela de login. Erro: {e}")
+
         print("Preenchendo credenciais...")
-        # Usamos presence_of_element porque com o modo 'none' o elemento pode não estar "clicável" ainda
-        wait.until(EC.presence_of_element_located((By.NAME, "data[Usuario][login]"))).send_keys(USUARIO)
-        driver.find_element(By.NAME, "data[Usuario][senha]").send_keys(SENHA)
-        driver.find_element(By.NAME, "data[Usuario][senha]").send_keys(Keys.ENTER)
+        # Usamos seletores flexíveis para o login
+        user_input = wait.until(EC.presence_of_element_located((By.NAME, "data[Usuario][login]")))
+        user_input.send_keys(USUARIO)
         
-        print("Login enviado. Aguardando entrada no painel (20s)...")
-        time.sleep(20) 
+        pass_input = driver.find_element(By.NAME, "data[Usuario][senha]")
+        pass_input.send_keys(SENHA)
+        pass_input.send_keys(Keys.ENTER)
+        
+        print("Login enviado. Aguardando Dashboard (25s)...")
+        time.sleep(25) 
         
         realizar_ronda(driver, wait)
         
