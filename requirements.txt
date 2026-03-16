@@ -1,4 +1,4 @@
-functions-framework==3.*
+functions-framework
 pandas
 gspread
 oauth2client
