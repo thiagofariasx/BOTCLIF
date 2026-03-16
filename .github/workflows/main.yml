@@ -17,14 +17,14 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Instalar Chrome e Driver
+      - name: Instalar Chrome Oficial
         run: |
           sudo apt-get update
-          sudo apt-get install --yes google-chrome-stable chromedriver
+          sudo apt-get install -y google-chrome-stable
 
       - name: Instalar Dependencias
         run: |
-          pip install pandas gspread oauth2client selenium openpyxl
+          pip install pandas gspread oauth2client selenium openpyxl webdriver-manager
 
       - name: Rodar Script do Thiago
         run: python robo_mestre.py
