@@ -17,14 +17,11 @@ from datetime import datetime
 import calendar
 import sys
 
+# Tenta importar o framework do Google para não dar erro no GitHub
 try:
     import functions_framework
 except ImportError:
     functions_framework = None
-
-# Ajuste de encoding
-if sys.stdout.encoding != 'utf-8':
-    sys.stdout.reconfigure(encoding='utf-8')
 
 # --- CONFIGURAÇÕES ---
 URL_SISTEMA = "https://sesce.clif.rvimola.com.br"
@@ -52,19 +49,19 @@ def configurar_driver():
     
     prefs = {"download.default_directory": DOWNLOAD_PATH}
     options.add_experimental_option("prefs", prefs)
-    options.page_load_strategy = 'eager' # Carrega o essencial primeiro
+    options.page_load_strategy = 'none' 
     
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
     driver.set_page_load_timeout(120)
     return driver
 
-def aguardar_download(timeout=150):
+def aguardar_download(timeout=120):
     segundos = 0
     while segundos < timeout:
         arquivos = os.listdir(DOWNLOAD_PATH)
         if any(f.endswith((".xlsx", ".xls")) for f in arquivos) and not any(".crdownload" in f for f in arquivos):
-            time.sleep(3) # Tempo para o SO liberar o arquivo
+            time.sleep(3)
             return True
         time.sleep(1)
         segundos += 1
@@ -72,14 +69,13 @@ def aguardar_download(timeout=150):
 
 def enviar_para_google(caminho_excel, nome_aba, chave_path):
     try:
-        print(f"Enviando dados para aba: {nome_aba}")
+        print(f"Enviando dados: {nome_aba}")
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         creds = ServiceAccountCredentials.from_json_keyfile_name(chave_path, scope)
         client = gspread.authorize(creds)
         sheet = client.open_by_url(PLANILHA_URL).worksheet(nome_aba)
         
         df = pd.read_excel(caminho_excel).fillna("")
-        # Remove caracteres que quebram o Sheets
         for col in df.columns:
             if df[col].dtype == 'object':
                 df[col] = df[col].astype(str).str.replace("'", "").str.strip()
@@ -87,14 +83,12 @@ def enviar_para_google(caminho_excel, nome_aba, chave_path):
         dados = [df.columns.values.tolist()] + df.values.tolist()
         sheet.clear()
         sheet.update(dados)
-        sheet.update_acell('Z1', f"Atualizado: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
         os.remove(caminho_excel)
-        print(f"--- SUCESSO: {nome_aba} ---")
+        print(f"--- {nome_aba} OK ---")
     except Exception as e:
-        print(f"Erro Google Sheets {nome_aba}: {e}")
+        print(f"Erro Sheets {nome_aba}: {e}")
 
 def realizar_ronda(driver, chave_path):
-    print("Iniciando downloads...")
     rotinas = [
         ("Relentradaspendentes/filtroentradas", "ENTRADAS PENDENTES", "RelentradaspendenteTipofiltro"),
         ("Relentradasconcluidasdetalhados/filtroentradas", "ENTRADAS CONCLUÍDAS", "RelentradasconcluidasdetalhadoTipofiltro"),
@@ -110,57 +104,38 @@ def realizar_ronda(driver, chave_path):
             driver.get(f"{URL_SISTEMA}/{path}")
             time.sleep(15)
             
-            # Injeção de JS para evitar erros de jQuery ($ is not a function)
-            js_script = f"""
-                var unidade = document.getElementById('filtro_unidade');
-                if(unidade) unidade.value = '1';
-                var d_ini = document.getElementById('data_inicio');
-                if(d_ini) d_ini.value = '{d_ini}';
-                var d_fim = document.getElementById('data_final');
-                if(d_fim) d_fim.value = '{d_fim}';
-                var tipo = document.getElementById('{tipo_filtro_id}');
-                if(tipo) tipo.value = '1';
-                
-                // Dispara a função do sistema se ela existir
-                if(typeof EscolhaTipoRelatorio === 'function') {{
-                    EscolhaTipoRelatorio();
-                    setTimeout(function() {{
-                        var btn = document.getElementById('XLSX');
-                        if(btn) btn.click();
-                    }}, 2000);
-                }}
-            """
-            driver.execute_script(js_script)
+            # Injeção JS pura (Sem $)
+            driver.execute_script(f"""
+                var u = document.getElementById('filtro_unidade'); if(u) u.value = '1';
+                var i = document.getElementById('data_inicio'); if(i) i.value = '{d_ini}';
+                var f = document.getElementById('data_final'); if(f) f.value = '{d_fim}';
+                var t = document.getElementById('{tipo_filtro_id}'); if(t) t.value = '1';
+                if(typeof EscolhaTipoRelatorio === 'function') EscolhaTipoRelatorio();
+                setTimeout(function(){{ var b = document.getElementById('XLSX'); if(b) b.click(); }}, 3000);
+            """)
             
             if aguardar_download():
                 arq = max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime)
                 enviar_para_google(arq, aba, chave_path)
-            else:
-                driver.save_screenshot(f"erro_timeout_{aba}.png")
         except Exception as e:
             print(f"Erro em {aba}: {e}")
-            driver.save_screenshot(f"erro_fatal_{aba}.png")
 
 def executar_robo():
     USUARIO = os.environ.get('USUARIO')
     SENHA = os.environ.get('SENHA')
     CHAVE_JSON_CONTENT = os.environ.get('GOOGLE_CHAVE_JSON')
-    CHAVE_PATH = "/tmp/google_key_clif.json"
+    CHAVE_PATH = "/tmp/key.json"
     
-    if not CHAVE_JSON_CONTENT:
-        print("Erro: GOOGLE_CHAVE_JSON não configurada.")
-        return
+    if not CHAVE_JSON_CONTENT: return
 
-    with open(CHAVE_PATH, 'w') as f:
-        json.dump(json.loads(CHAVE_JSON_CONTENT), f)
+    with open(CHAVE_PATH, 'w') as f: json.dump(json.loads(CHAVE_JSON_CONTENT), f)
 
     driver = configurar_driver()
     try:
-        print("Abrindo login...")
+        print("Abrindo login via São Paulo...")
         driver.get(f"{URL_SISTEMA}/usuarios/login")
         time.sleep(15)
         
-        # Injeção direta de login
         driver.execute_script(f"""
             document.getElementById('UsuarioLogin').value = '{USUARIO}';
             document.getElementById('UsuarioSenha').value = '{SENHA}';
@@ -168,23 +143,18 @@ def executar_robo():
         """)
         time.sleep(20)
         
-        driver.save_screenshot("pos_login.png")
-        
         if "login" not in driver.current_url:
-            print("Login realizado. Iniciando Ronda...")
             realizar_ronda(driver, CHAVE_PATH)
         else:
-            print("Falha no Login. Verifique as credenciais ou CAPTCHA.")
-            
+            print("Ainda na tela de login. Verifique credenciais.")
     finally:
         driver.quit()
-        if os.path.exists(CHAVE_PATH): os.remove(CHAVE_PATH)
 
 if functions_framework:
     @functions_framework.http
     def main(request):
         executar_robo()
-        return "OK", 200
+        return "Concluído", 200
 
 if __name__ == "__main__":
     executar_robo()
