@@ -147,20 +147,17 @@ if __name__ == "__main__":
         print("Aguardando carregamento (45s)...")
         time.sleep(45)
 
-        print("Iniciando sequência de teclas 'Cega' via ActionChains...")
+        print("Iniciando sequência de teclas 'Cega'...")
         actions = ActionChains(driver)
         
-        # 1. Clica num ponto fixo para garantir foco no navegador
+        # Clica no centro para garantir foco
         actions.move_by_offset(500, 300).click().perform()
         time.sleep(2)
         
-        # 2. Navega via TAB até o primeiro campo (Usuário)
-        # Geralmente 2 ou 3 Tabs resolvem
         for _ in range(3):
             actions.send_keys(Keys.TAB).perform()
             time.sleep(0.5)
             
-        # 3. Digita Usuário, Tab, Senha e Enter
         print("Digitando Usuário...")
         actions.send_keys(USUARIO).perform()
         time.sleep(1)
@@ -172,15 +169,21 @@ if __name__ == "__main__":
         print("Enviando Enter...")
         actions.send_keys(Keys.ENTER).perform()
         
-        print("Sequência finalizada. Aguardando Dashboard (45s)...")
+        print("Aguardando Dashboard (45s)...")
         time.sleep(45) 
         
-        print(f"Página atual após login: {driver.current_url}")
+        # --- TIRA FOTO DA TELA PARA VER O QUE ACONTECEU ---
+        driver.save_screenshot("erro_login.png")
+        print("Foto da tela capturada (erro_login.png).")
+        
+        print(f"Página atual: {driver.current_url}")
         
         realizar_ronda(driver, WebDriverWait(driver, 60))
         
     except Exception as e:
         print(f"!!! ERRO FATAL !!!: {e}")
+        if driver:
+            driver.save_screenshot("erro_login.png")
     finally:
         if driver: driver.quit()
         if os.path.exists(CHAVE_JSON): os.remove(CHAVE_JSON)
