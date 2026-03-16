@@ -48,14 +48,12 @@ def configurar_driver():
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
-    options.add_argument("--disable-extensions")
-    options.add_argument("--proxy-server='direct://'")
-    options.add_argument("--proxy-bypass-list=*")
-    options.add_argument("--start-maximized")
     
-    # Esta linha aqui é a que mata o erro de localhost:
+    # Isso aqui evita que o Chrome tente usar a rede interna (localhost) para se comunicar
     options.add_argument("--remote-debugging-pipe")
     
+    # No GitHub Actions, com o setup-chrome acima, não precisamos passar caminhos. 
+    # O Selenium 4.10 acha tudo sozinho.
     return webdriver.Chrome(options=options)
 def aguardar_download(timeout=90):
     segundos = 0
