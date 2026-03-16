@@ -1,0 +1,29 @@
+name: Atualizar Relatorios CLIF
+
+on:
+  schedule:
+    - cron: '*/20 * * * *' # Roda a cada 20 minutos
+  workflow_dispatch: # Adiciona um botão para você rodar na mão quando quiser
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do codigo
+        uses: actions/checkout@v3
+
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Instalar Dependencias
+        run: |
+          pip install pandas gspread oauth2client selenium webdriver-manager openpyxl
+
+      - name: Rodar Script do Thiago
+        run: python bot_clif.py
+        env:
+          USUARIO: ${{ secrets.USUARIO_CLIF }}
+          SENHA: ${{ secrets.SENHA_CLIF }}
+          GOOGLE_CHAVE_JSON: ${{ secrets.GOOGLE_CHAVE }}
