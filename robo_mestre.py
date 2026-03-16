@@ -50,22 +50,22 @@ def configurar_driver():
     options.add_argument("--disable-gpu")
     options.add_argument("--remote-debugging-pipe")
     
-    # NOVAS FLAGS PARA EVITAR O TIMEOUT DO RENDERER:
+    # FLAGS DE ESTABILIDADE PARA SERVIDOR
     options.add_argument("--disable-renderer-backgrounding")
     options.add_argument("--disable-backgrounding-occluded-windows")
     options.add_argument("--disable-ipc-flooding-protection")
     
-    # Isso aqui diz para o Chrome não esperar a página carregar 100% (imagens, etc) 
-    # para começar a trabalhar. Ajuda muito em servidores lentos.
+    # Estratégia Eager: foca no conteúdo e ignora carregamento de firulas (imagens/ads)
     options.page_load_strategy = 'eager' 
     
     driver = webdriver.Chrome(options=options)
     
-    # Aumentamos o tempo limite de espera do próprio comando do Chrome
+    # Damos 120 segundos para o site responder. Calma total.
     driver.set_page_load_timeout(120) 
     
     return driver
-def aguardar_download(timeout=90):
+
+def aguardar_download(timeout=120): # Aumentado para 120s
     segundos = 0
     while segundos < timeout:
         arquivos = os.listdir(DOWNLOAD_PATH)
@@ -99,63 +99,98 @@ def enviar_para_google(caminho_excel, nome_aba):
         sheet.clear()
         sheet.update(dados)
         sheet.update_acell('Z1', f"Atualizado: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
-        print(f"Sucesso: {nome_aba}")
+        print(f"--- SUCESSO: {nome_aba} ---")
         os.remove(caminho_excel)
     except Exception as e:
-        print(f"Erro Google: {e}")
+        print(f"Erro Google Sheets: {e}")
 
-# --- ROTINAS ---
 def realizar_ronda(driver, wait):
+    print("Iniciando rotinas de download...")
+    
     # [1] Pendentes
+    print("Processando Pendentes...")
     driver.get("https://sesce.clif.rvimola.com.br/Relentradaspendentes/filtroentradas")
     Select(wait.until(EC.element_to_be_clickable((By.ID, "filtro_unidade")))).select_by_value("1")
+    time.sleep(2)
     driver.execute_script("document.getElementById('RelentradaspendenteTipofiltro').value = '1'; EscolhaTipoRelatorio();")
     wait.until(EC.element_to_be_clickable((By.ID, "XLSX"))).click()
-    if aguardar_download(): enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), "ENTRADAS PENDENTES")
+    if aguardar_download(): 
+        enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), "ENTRADAS PENDENTES")
 
     # [2] Concluidas
+    print("Processando Concluídas...")
     d_ini, d_fim = obter_datas_mes_atual()
     driver.get("https://sesce.clif.rvimola.com.br/Relentradasconcluidasdetalhados/filtroentradas")
     Select(wait.until(EC.element_to_be_clickable((By.ID, "filtro_unidade")))).select_by_value("1")
+    time.sleep(2)
     driver.execute_script(f"document.getElementById('data_inicio').value='{d_ini}'; document.getElementById('data_final').value='{d_fim}'; document.getElementById('RelentradasconcluidasdetalhadoTipofiltro').value='1'; EscolhaTipoRelatorio();")
     wait.until(EC.element_to_be_clickable((By.ID, "XLSX"))).click()
-    if aguardar_download(): enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), "ENTRADAS CONCLUÍDAS")
+    if aguardar_download(): 
+        enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), "ENTRADAS CONCLUÍDAS")
 
     # [3] Bloqueados
+    print("Processando Bloqueados...")
     driver.get("https://sesce.clif.rvimola.com.br/Relprodutosbloqueados/listarprodutos")
     Select(wait.until(EC.element_to_be_clickable((By.ID, "filtro_unidade")))).select_by_value("1")
+    time.sleep(2)
     driver.execute_script("document.getElementById('RelprodutosbloqueadoTipofiltro').value='1'; EscolhaTipoRelatorio();")
     wait.until(EC.element_to_be_clickable((By.ID, "XLSX"))).click()
-    if aguardar_download(): enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), "BLOQUEADOS")
+    if aguardar_download(): 
+        enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), "BLOQUEADOS")
 
     # [4] Pedidos
+    print("Processando Pedidos em Aberto...")
     driver.get("https://sesce.clif.rvimola.com.br/Relsaidasgerals/filtrosaidas")
     Select(wait.until(EC.element_to_be_clickable((By.ID, "filtro_unidade")))).select_by_value("1")
-    time.sleep(5)
+    time.sleep(10) # Pedidos costuma ser pesado
     driver.execute_script("document.getElementById('cod_wms').value='1'; document.getElementById('filtro_nstatus_ped').value='0'; document.getElementById('RelsaidasgeralTipofiltro').value='1'; EscolhaTipoRelatorio();")
     wait.until(EC.element_to_be_clickable((By.ID, "XLSX"))).click()
-    if aguardar_download(120): enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), "PEDIDOS EM ABERTO")
+    if aguardar_download(150): # Mais tempo para esse download
+        enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), "PEDIDOS EM ABERTO")
 
     # [5] Saidas
+    print("Processando Saídas Concluídas...")
     driver.get("https://sesce.clif.rvimola.com.br/Relsaidasconcluidas/listarprodutos")
     Select(wait.until(EC.element_to_be_clickable((By.ID, "filtro_unidade")))).select_by_value("1")
+    time.sleep(2)
     driver.execute_script(f"document.getElementById('data_inicio').value = '{d_ini}'; document.getElementById('data_final').value = '{d_fim}'; document.getElementById('RelsaidasconcluidaTipofiltro').value = '1'; EscolhaTipoRelatorio();")
     wait.until(EC.element_to_be_clickable((By.ID, "XLSX"))).click()
-    if aguardar_download(): enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), "SAÍDAS CONCLUÍDAS")
+    if aguardar_download(): 
+        enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), "SAÍDAS CONCLUÍDAS")
 
 if __name__ == "__main__":
-    print(f"Iniciando: {datetime.now()}")
-    driver = configurar_driver()
-    wait = WebDriverWait(driver, 60)
+    # Limpa downloads antigos
+    for f in os.listdir(DOWNLOAD_PATH): 
+        try: os.remove(os.path.join(DOWNLOAD_PATH, f))
+        except: pass
+        
+    print(f"--- INÍCIO DO PROCESSO: {datetime.now()} ---")
+    
     try:
+        driver = configurar_driver()
+        print("Chrome aberto com sucesso. Aguardando 10s para estabilizar...")
+        time.sleep(10) # Calma antes de começar
+        
+        wait = WebDriverWait(driver, 60)
+        
+        print(f"Acessando sistema: {URL_SISTEMA}")
         driver.get(URL_SISTEMA)
-        wait.until(EC.element_to_be_clickable((By.NAME, "data[Usuario][login]"))).send_keys(USUARIO)
+        
+        print("Realizando Login...")
+        wait.until(EC.presence_of_element_to_be_clickable((By.NAME, "data[Usuario][login]"))).send_keys(USUARIO)
         driver.find_element(By.NAME, "data[Usuario][senha]").send_keys(SENHA)
         driver.find_element(By.NAME, "data[Usuario][senha]").send_keys(Keys.ENTER)
-        time.sleep(10)
+        
+        time.sleep(15) # Espera o dashboard carregar com calma
+        print("Login concluído. Iniciando ronda...")
+        
         realizar_ronda(driver, wait)
+        
     except Exception as e:
-        print(f"Erro: {e}")
+        print(f"!!! ERRO FATAL !!!: {e}")
     finally:
-        driver.quit()
-        if os.path.exists(CHAVE_JSON): os.remove(CHAVE_JSON)
+        if 'driver' in locals():
+            driver.quit()
+        if os.path.exists(CHAVE_JSON): 
+            os.remove(CHAVE_JSON)
+        print(f"--- FIM DO PROCESSO: {datetime.now()} ---")
