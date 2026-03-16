@@ -51,10 +51,10 @@ def obter_datas_mes_atual():
 
 def configurar_driver():
     chrome_options = webdriver.ChromeOptions()
-    # Configurações para rodar no Servidor (Linux/GitHub)
     chrome_options.add_argument("--headless") 
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--window-size=1920,1080")
     
     prefs = {
@@ -65,7 +65,8 @@ def configurar_driver():
     }
     chrome_options.add_experimental_option("prefs", prefs)
     
-    # No GitHub Actions, o driver já está no PATH, usamos o Service simplificado
+    # Removendo o Service(ChromeDriverManager().install()) que causou o timeout
+    # No GitHub o Chrome já está no sistema, basta chamar direto:
     return webdriver.Chrome(options=chrome_options)
 
 def aguardar_download(timeout=60):
