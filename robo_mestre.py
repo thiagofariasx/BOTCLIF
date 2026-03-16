@@ -53,10 +53,8 @@ def configurar_driver():
     options.add_argument("--window-size=1920,1080")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36")
     
-    # Estratégia 'none' para o Selenium não ficar preso esperando o renderer
     options.page_load_strategy = 'none' 
     driver = webdriver.Chrome(options=options)
-    
     driver.set_page_load_timeout(180)
     return driver
 
@@ -114,9 +112,9 @@ def realizar_ronda(driver, wait):
         try:
             print(f"Processando {aba}...")
             driver.get(f"https://sesce.clif.rvimola.com.br/{path}")
-            time.sleep(20) # Tempo para estabilizar página pesada
+            time.sleep(25)
             
-            Select(wait.until(EC.element_to_be_clickable((By.ID, "filtro_unidade")))).select_by_value("1")
+            Select(wait.until(EC.presence_of_element_located((By.ID, "filtro_unidade")))).select_by_value("1")
             
             if "concluidas" in path:
                 driver.execute_script(f"document.getElementById('data_inicio').value='{d_ini}'; document.getElementById('data_final').value='{d_fim}';")
@@ -125,7 +123,8 @@ def realizar_ronda(driver, wait):
                 time.sleep(5)
 
             driver.execute_script(f"document.getElementById('{tipo_filtro_id}').value = '1'; EscolhaTipoRelatorio();")
-            wait.until(EC.element_to_be_clickable((By.ID, "XLSX"))).click()
+            time.sleep(5)
+            driver.execute_script("document.getElementById('XLSX').click();")
             
             if aguardar_download(200 if "saidasgerals" in path else 120):
                 enviar_para_google(max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime), aba)
@@ -142,42 +141,43 @@ if __name__ == "__main__":
     driver = None
     try:
         driver = configurar_driver()
-        wait = WebDriverWait(driver, 60)
         
-        print("Acessando tela de login...")
+        print("Acessando tela de login diretamente...")
         driver.get("https://sesce.clif.rvimola.com.br/usuarios/login")
-        
-        # Espera bruta de 40 segundos para o site carregar tudo sem pressa
-        print("Aguardando carregamento inicial (40s)...")
-        time.sleep(40)
-        
-        print("Simulando digitação humana via ActionChains...")
-        try:
-            # Em vez de injetar código, vamos "clicar" e "digitar" teclas
-            # Isso mata o erro de 'script timeout'
-            user_input = wait.until(EC.presence_of_element_located((By.ID, "UsuarioLogin")))
-            
-            actions = ActionChains(driver)
-            actions.move_to_element(user_input).click().send_keys(USUARIO).perform()
-            time.sleep(2)
-            
-            actions.send_keys(Keys.TAB).send_keys(SENHA).perform()
-            time.sleep(2)
-            
-            actions.send_keys(Keys.ENTER).perform()
-            print("Teclas de login enviadas com sucesso.")
-            
-        except Exception as e_action:
-            print(f"Erro na ação de teclado: {e_action}. Tentando alternativa...")
-            # Alternativa via seletor direto caso o ActionChains falhe
-            driver.find_element(By.ID, "UsuarioLogin").send_keys(USUARIO)
-            driver.find_element(By.ID, "UsuarioSenha").send_keys(SENHA)
-            driver.find_element(By.ID, "UsuarioSenha").send_keys(Keys.ENTER)
+        print("Aguardando carregamento (45s)...")
+        time.sleep(45)
 
-        print("Aguardando Dashboard (40s)...")
-        time.sleep(40) 
+        print("Iniciando sequência de teclas 'Cega' via ActionChains...")
+        actions = ActionChains(driver)
         
-        realizar_ronda(driver, wait)
+        # 1. Clica num ponto fixo para garantir foco no navegador
+        actions.move_by_offset(500, 300).click().perform()
+        time.sleep(2)
+        
+        # 2. Navega via TAB até o primeiro campo (Usuário)
+        # Geralmente 2 ou 3 Tabs resolvem
+        for _ in range(3):
+            actions.send_keys(Keys.TAB).perform()
+            time.sleep(0.5)
+            
+        # 3. Digita Usuário, Tab, Senha e Enter
+        print("Digitando Usuário...")
+        actions.send_keys(USUARIO).perform()
+        time.sleep(1)
+        
+        print("Digitando Senha...")
+        actions.send_keys(Keys.TAB).send_keys(SENHA).perform()
+        time.sleep(1)
+        
+        print("Enviando Enter...")
+        actions.send_keys(Keys.ENTER).perform()
+        
+        print("Sequência finalizada. Aguardando Dashboard (45s)...")
+        time.sleep(45) 
+        
+        print(f"Página atual após login: {driver.current_url}")
+        
+        realizar_ronda(driver, WebDriverWait(driver, 60))
         
     except Exception as e:
         print(f"!!! ERRO FATAL !!!: {e}")
