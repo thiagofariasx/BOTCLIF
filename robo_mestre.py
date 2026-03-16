@@ -54,7 +54,11 @@ def configurar_driver():
     
     options.page_load_strategy = 'none' 
     driver = webdriver.Chrome(options=options)
+    
+    # AJUSTE PARA O ERRO DE SCRIPT TIMEOUT
+    driver.set_script_timeout(120) 
     driver.set_page_load_timeout(180) 
+    
     return driver
 
 def aguardar_download(timeout=180): 
@@ -140,25 +144,31 @@ if __name__ == "__main__":
         driver = configurar_driver()
         wait = WebDriverWait(driver, 60)
         
-        # ACESSO DIRETO À TELA DE LOGIN (Economiza um passo)
         print("Acessando tela de login diretamente...")
         driver.get("https://sesce.clif.rvimola.com.br/usuarios/login")
         time.sleep(30)
         
-        # LOGIN POR INJEÇÃO DE SCRIPT (Não falha se o campo estiver "escondido")
+        # INJEÇÃO ROBUSTA COM TIMEOUT PARA O SELENIUM NÃO TRAVAR
         print("Injetando credenciais via JS...")
         driver.execute_script(f"""
-            document.getElementById('UsuarioLogin').value = '{USUARIO}';
-            document.getElementById('UsuarioSenha').value = '{SENHA}';
-            document.getElementById('UsuarioLoginForm').submit();
+            var user = '{USUARIO}';
+            var pass = '{SENHA}';
+            var checkExist = setInterval(function() {{
+               if (document.getElementById('UsuarioLogin')) {{
+                  document.getElementById('UsuarioLogin').value = user;
+                  document.getElementById('UsuarioSenha').value = pass;
+                  document.getElementById('UsuarioLoginForm').submit();
+                  clearInterval(checkExist);
+               }}
+            }}, 500);
         """)
         
-        print("Login submetido. Aguardando Dashboard (30s)...")
-        time.sleep(30) 
+        print("Login submetido. Aguardando Dashboard (40s)...")
+        time.sleep(40) 
         
-        # Verifica se logou (se a URL mudou ou se não estamos mais no login)
+        # Se ainda estiver na tela de login por algum motivo, tenta um clique bruto
         if "login" in driver.current_url.lower():
-            print("Aviso: Ainda na tela de login. Tentando clique manual no botão...")
+            print("Tentando clique manual no botão de login...")
             driver.execute_script("document.querySelector('input[type=\"submit\"]').click();")
             time.sleep(20)
 
