@@ -17,13 +17,11 @@ from datetime import datetime
 import calendar
 import sys
 
-# Tenta importar o framework do Google, se falhar (no GitHub), segue normal
 try:
     import functions_framework
 except ImportError:
     functions_framework = None
 
-# Ajuste de encoding
 if sys.stdout.encoding != 'utf-8':
     sys.stdout.reconfigure(encoding='utf-8')
 
@@ -95,11 +93,11 @@ def enviar_para_google(caminho_excel, nome_aba, chave_path):
         sheet.update(dados)
         sheet.update_acell('Z1', f"Atualizado (SP): {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
         os.remove(caminho_excel)
+        print(f"--- {nome_aba} OK ---")
     except Exception as e:
-        print(f"Erro Google Sheets na aba {nome_aba}: {e}")
+        print(f"Erro Sheets {nome_aba}: {e}")
 
 def realizar_ronda(driver, wait, chave_path):
-    print("Iniciando rotinas de download de relatórios...")
     rotinas = [
         ("Relentradaspendentes/filtroentradas", "ENTRADAS PENDENTES", "RelentradaspendenteTipofiltro"),
         ("Relentradasconcluidasdetalhados/filtroentradas", "ENTRADAS CONCLUÍDAS", "RelentradasconcluidasdetalhadoTipofiltro"),
@@ -113,26 +111,32 @@ def realizar_ronda(driver, wait, chave_path):
         try:
             print(f"Processando {aba}...")
             driver.get(f"{URL_SISTEMA}/{path}")
-            time.sleep(25)
+            time.sleep(20)
             
-            # Unidade Operacional
-            Select(wait.until(EC.presence_of_element_located((By.ID, "filtro_unidade")))).select_by_value("1")
+            # Limpa qualquer modal que esteja bloqueando a tela
+            driver.execute_script("$('.ui-dialog').remove(); $('.ui-widget-overlay').remove();")
+            
+            # Espera e seleciona Unidade
+            el_unidade = wait.until(EC.presence_of_element_located((By.ID, "filtro_unidade")))
+            Select(el_unidade).select_by_value("1")
             
             if "concluidas" in path:
                 driver.execute_script(f"document.getElementById('data_inicio').value='{d_ini}'; document.getElementById('data_final').value='{d_fim}';")
+            
             if "saidasgerals" in path:
                 driver.execute_script("document.getElementById('cod_wms').value='1'; document.getElementById('filtro_nstatus_ped').value='0';")
-                time.sleep(5)
+                time.sleep(2)
 
+            # Dispara o XLSX
             driver.execute_script(f"document.getElementById('{tipo_filtro_id}').value = '1'; EscolhaTipoRelatorio();")
             time.sleep(5)
             driver.execute_script("document.getElementById('XLSX').click();")
             
-            if aguardar_download(200):
+            if aguardar_download(180):
                 arquivo_recente = max([os.path.join(DOWNLOAD_PATH, f) for f in os.listdir(DOWNLOAD_PATH)], key=os.path.getctime)
                 enviar_para_google(arquivo_recente, aba, chave_path)
         except Exception as e:
-            print(f"Erro na aba {aba}: {e}")
+            print(f"Erro em {aba}: {e}")
 
 def executar_robo():
     USUARIO = os.environ.get('USUARIO')
@@ -146,7 +150,6 @@ def executar_robo():
 
     print(f"--- INÍCIO DA RONDA (SÃO PAULO): {datetime.now()} ---")
     
-    # Limpa a pasta temporária antes de começar
     for f in os.listdir(DOWNLOAD_PATH):
         try: os.remove(os.path.join(DOWNLOAD_PATH, f))
         except: pass
@@ -157,38 +160,40 @@ def executar_robo():
     try:
         print("Abrindo tela de login...")
         driver.get(f"{URL_SISTEMA}/usuarios/login")
-        time.sleep(35)
+        time.sleep(20)
 
         print("Simulando login por teclado...")
         actions = ActionChains(driver)
-        actions.move_by_offset(500, 300).click().perform()
+        actions.move_by_offset(100, 100).click().perform() # Clique lateral para foco
         time.sleep(2)
         
-        for _ in range(3):
+        # Sequência de tabs para garantir foco no campo de usuário
+        for _ in range(5): 
             actions.send_keys(Keys.TAB).perform()
-            time.sleep(0.5)
+            time.sleep(0.2)
             
         actions.send_keys(USUARIO).send_keys(Keys.TAB).send_keys(SENHA).send_keys(Keys.ENTER).perform()
-        print("Login enviado. Aguardando estabilização...")
+        time.sleep(5)
+        actions.send_keys(Keys.ENTER).perform() # Reforço do Enter
+        
+        print("Login enviado. Aguardando Dashboard (45s)...")
         time.sleep(45) 
         
         realizar_ronda(driver, wait, CHAVE_TEMP_PATH)
         print("--- SUCESSO TOTAL ---")
         
     except Exception as e:
-        print(f"!!! ERRO NO PROCESSO !!!: {e}")
+        print(f"!!! ERRO FATAL !!!: {e}")
     finally:
         driver.quit()
         if os.path.exists(CHAVE_TEMP_PATH):
             os.remove(CHAVE_TEMP_PATH)
 
-# Wrapper para o Cloud Functions
 if functions_framework:
     @functions_framework.http
     def main(request):
         executar_robo()
         return "OK", 200
 
-# Execução manual ou GitHub
 if __name__ == "__main__":
     executar_robo()
