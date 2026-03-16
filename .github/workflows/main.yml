@@ -18,10 +18,10 @@ jobs:
 
       - name: Instalar Dependencias
         run: |
-          pip install pandas gspread oauth2client selenium==4.10.0 openpyxl
+          pip install pandas gspread oauth2client selenium==4.10.0 openpyxl webdriver-manager functions-framework
 
       - name: Rodar Script do Thiago
-        run: python main.py  # Alterado de robo_mestre.py para main.py
+        run: python main.py
         env:
           USUARIO: ${{ secrets.USUARIO_CLIF }}
           SENHA: ${{ secrets.SENHA_CLIF }}
