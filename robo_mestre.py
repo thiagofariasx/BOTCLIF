@@ -55,7 +55,7 @@ def configurar_driver():
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--remote-debugging-port=9222") # Adicione esta linha!
     
     prefs = {
         "download.default_directory": DOWNLOAD_PATH,
@@ -65,8 +65,9 @@ def configurar_driver():
     }
     chrome_options.add_experimental_option("prefs", prefs)
     
-    # Removendo o Service(ChromeDriverManager().install()) que causou o timeout
-    # No GitHub o Chrome já está no sistema, basta chamar direto:
+    # Forçamos o uso do binário do Chrome que já vem no GitHub
+    chrome_options.binary_location = "/usr/bin/google-chrome"
+    
     return webdriver.Chrome(options=chrome_options)
 
 def aguardar_download(timeout=60):
