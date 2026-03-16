@@ -17,14 +17,15 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Instalar Chrome Oficial
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable
+      # Esta ação instala o Chrome e o Driver compatível automaticamente
+      - name: Setup Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
 
       - name: Instalar Dependencias
         run: |
-          pip install pandas gspread oauth2client selenium openpyxl
+          pip install pandas gspread oauth2client selenium==4.10.0 openpyxl
 
       - name: Rodar Script do Thiago
         run: python robo_mestre.py
