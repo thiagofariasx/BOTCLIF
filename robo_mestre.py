@@ -43,14 +43,12 @@ def obter_datas_mes_atual():
     return data_ini, data_fim
 
 def configurar_driver():
-    from selenium.webdriver.chrome.service import Service
-    from webdriver_manager.chrome import ChromeDriverManager
-    
     options = webdriver.ChromeOptions()
-    options.add_argument("--headless")
+    options.add_argument("--headless=new") # Versão mais moderna do headless
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
+    options.add_argument("--remote-allow-origins=*")
     
     prefs = {
         "download.default_directory": DOWNLOAD_PATH,
@@ -60,9 +58,9 @@ def configurar_driver():
     }
     options.add_experimental_option("prefs", prefs)
     
-    # O WebDriver Manager vai baixar a versão certa pro Chrome que instalamos no GitHub
-    service = Service(ChromeDriverManager().install())
-    return webdriver.Chrome(service=service, options=options)
+    # Simples assim. Sem Service, sem Manager. 
+    # O GitHub se vira para achar o binário se as opções estiverem certas.
+    return webdriver.Chrome(options=options)
 def aguardar_download(timeout=90):
     segundos = 0
     while segundos < timeout:
