@@ -43,16 +43,23 @@ def obter_datas_mes_atual():
     return data_ini, data_fim
 
 def configurar_driver():
-    import undetected_chromedriver as uc
+    from selenium.webdriver.chrome.service import Service
     
-    options = uc.ChromeOptions()
-    options.add_argument("--headless") 
+    options = webdriver.ChromeOptions()
+    options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
     
-    # Deixamos sem o version_main para ele se auto-ajustar
-    driver = uc.Chrome(options=options) 
-    return driver
+    # ESSA LINHA É A CHAVE: Ela evita o erro de "cannot connect to 127.0.0.1"
+    # Ela faz o código falar com o Chrome via "tubos" de memória, não via rede.
+    options.add_argument("--remote-debugging-pipe")
+    
+    # Ignora erros de certificado e extensões que travam o boot
+    options.add_argument("--disable-extensions")
+    options.add_argument("--ignore-certificate-errors")
+    
+    return webdriver.Chrome(options=options)
 def aguardar_download(timeout=90):
     segundos = 0
     while segundos < timeout:
